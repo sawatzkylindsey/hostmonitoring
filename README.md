@@ -17,6 +17,8 @@ We needn't provide support for finding/listing files.
 Separate files may be viewed by distinct invocations of our solution.
 * The "inspector" views log lines via HTTP REST Api.
 We should only provide access to files within `/var/log`.
+* The "inspector" is implicitly trusted.
+We do not need to design and implement some form of authentication/authorization.
 
 From here, let's write down our requirements:
 
@@ -31,7 +33,7 @@ From here, let's write down our requirements:
 * Files that don't exist in `/var/log` should return an appropriate error (ex: HTTP `404`).
 * Only file + filepaths that form a valid absolute path inside `/var/log` should be accessible.
 
-Given these requirements are satisfied, we may consider the some future requirements/enhancements.
+Given these requirements are satisfied, we may consider some future requirements/enhancements.
 It may be useful to keep these in mind for the design.
 
 * Provide a CLI/UI client.
@@ -80,3 +82,17 @@ There are a few key reasons for this choice:
 
     # Run style checks (aka: clippy)
     cargo check
+
+### Plan
+Basic plan for tackling the implementation:
+
+1. Wire up Cli to execute to agent server program.
+2. Add axum with `/inspect` route.
+3. Implement `/var/log` file read (without optional query parameters).
+4. Add integration test which actually issues a query to the running the agent.
+5. Implement substring[] query parameter and extend integration tests.
+6. Implement limit query parameter and extend integration tests (the order between this and the previous isn't important).
+
+Future enhancements (might not get to these):
+1. Add client side Cli program.
+2. Sketch out support for inspecting logs across hosts.
