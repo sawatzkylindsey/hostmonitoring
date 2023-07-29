@@ -4,13 +4,14 @@
     # View the agent help message
     ./target/debug/hostmonitoring-agent -h
 
-> usage: hostmonitoring-agent [-h] PORT
+> usage: hostmonitoring-agent [-h] [--log-root LOG-ROOT] PORT
 >
 > positional arguments:</br>
-> PORT        The HTTP port to listen on.
+> ㅤPORT        The HTTP port to listen on.
 >
 > options:</br>
-> -h, --help  Show this help message and exit.
+> ㅤ-h, --help  Show this help message and exit.</br>
+> ㅤ--log-root LOG-ROOT  Path to the logs to expose (default: /var/log).
 
     # Run the agent server
     ./target/debug/hostmonitoring-agent 123

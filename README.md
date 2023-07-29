@@ -17,8 +17,11 @@ We needn't provide support for finding/listing files.
 Separate files may be viewed by distinct invocations of our solution.
 * The "inspector" views log lines via HTTP REST Api.
 We should only provide access to files within `/var/log`.
+It is OK to parameterize the log root (ex: may be useful for testing).
 * The "inspector" is implicitly trusted.
 We do not need to design and implement some form of authentication/authorization.
+* The host under monitoring is implicitly trusted.
+We do not need to protect from the solution being used to exfiltrate host data.
 
 From here, let's write down our requirements:
 
@@ -89,7 +92,7 @@ Basic plan for tackling the implementation:
 1. ~~Wire up Cli to execute to agent server program.~~
 2. ~~Add axum with `/inspect` route.~~
 3. Implement `/var/log` file read (without optional query parameters).
-4. Add integration test which actually issues a query to the running the agent.
+4. ~~Add integration test which actually issues a query to the running the agent.~~
 5. Implement substring[] query parameter and extend integration tests.
 6. Implement limit query parameter and extend integration tests (the order between this and the previous isn't important).
 
