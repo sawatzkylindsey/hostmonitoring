@@ -73,20 +73,38 @@ There are a few key reasons for this choice:
 * I work with Rust and axum day to day, so it is a comfortable choice.
 
 ### Development
+Working in the project:
 
     # Build the project
     cargo build
-
     # Run tests
     cargo test
-
     # Run style checks (aka: clippy)
     cargo check
+
+Running the agent:
+
+    # View the agent help message
+    ./target/debug/hostmonitoring-agent -h
+
+> ./target/debug/hostmonitoring-agent -h
+> usage: hostmonitoring-agent [-h] PORT
+>
+> positional arguments:
+> PORT        The HTTP port to listen on.
+>
+> options:
+> -h, --help  Show this help message and exit.
+
+    # Run the agent server
+    ./target/debug/hostmonitoring-agent 123
+
+> Running with Parameters { port: 123 }
 
 ### Plan
 Basic plan for tackling the implementation:
 
-1. Wire up Cli to execute to agent server program.
+1. ~~Wire up Cli to execute to agent server program.~~
 2. Add axum with `/inspect` route.
 3. Implement `/var/log` file read (without optional query parameters).
 4. Add integration test which actually issues a query to the running the agent.
