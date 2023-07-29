@@ -1,4 +1,4 @@
-use blarg::{CommandLineParser, GeneralParser, Parameter, Scalar, Switch};
+use blarg::{CommandLineParser, GeneralParser, Parameter, Scalar};
 
 /// Container for the parameters to extract from the Cli invocation.
 #[derive(Debug, PartialEq, Eq)]

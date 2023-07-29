@@ -1,7 +1,8 @@
 mod parameter;
+mod server;
 
 #[tokio::main]
 async fn main() {
     let parameters = parameter::parse();
-    println!("Running with {parameters:?}");
+    server::run_server(parameters).await
 }
