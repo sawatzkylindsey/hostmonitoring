@@ -9,8 +9,10 @@ We've been tasked specifically to provide this access via REST Api.
 #### Requirements
 Let's make a few assumptions at the outset:
 
+* The "inspector" knows the host (and address) they want to inspect a-priori.
+We needn't provide support for finding/listing hosts.
 * The "inspector" knows the file (and path) they want to view a-priori.
-That is, we needn't provide support for finding/listing files.
+We needn't provide support for finding/listing files.
 * The "inspector" wants to view a single file a time.
 Separate files may be viewed by distinct invocations of our solution.
 * The "inspector" views log lines via HTTP REST Api.
@@ -35,3 +37,35 @@ It may be useful to keep these in mind for the design.
 * Provide a CLI/UI client.
 * Support inspecting the logs across multiple hosts, via a single host.
 
+Finally, let's list out any non-requirements in order to reasonably constrain the design:
+
+* We do not design for a 'log tailing' use case, whereby the client continuously recieves a stream of "new" log lines.
+
+### Design
+We run a lightweight "agent" service on all hosts in the fleet to support viewing files in `/var/log`.
+The agent binds a fixed port on the host and responds to HTTP REST requests made from a client.
+Requests from multiple clients may be served simultaneously from a single host by establishing separate HTTP connections.
+Moreover, different client applications may be built to serve different use cases (ex: CLI, UI, etc).
+
+![](docs/InitialDesign.png)
+
+We define a REST Api for the above requirements.
+
+```
+GET http://host:PORT/inspect/filepath ? substring[]=SUBSTRING_1 & substring[]=SUBSTRING_2 & limit=LIMIT
+```
+
+Briefly:
+* The `filepath` is a required path parameter.
+This is the relative path within `/var/log` to inspect.
+In the future, we may support directory level inspection (ex: everything under `/var/log`) without breaking support for file inspection.
+* The `substring[]` and `limit` parameters are specified as optional query parameters.
+* In the future, we support more advanced query parameters such as `regex` for regex-based filtering, or `page` to batch log inspection across requests.
+
+For full details, see the [Api specification](docs/hostmonitoring.yaml) (uses [swagger format](https://swagger.io/)).
+
+For implementation, we use [Rust](https://www.rust-lang.org/) with a simple web server framework called [axum](https://docs.rs/axum/latest/axum/).
+There are a few key reasons for this choice:
+* Rust is a highly performant programming language.
+* Rust provides good memory safety invariants.
+* I work with Rust and axum day to day, so it is a comfortable choice.

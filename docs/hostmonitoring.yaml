@@ -1,0 +1,40 @@
+openapi: 3.0.3
+info:
+  title: Host Monitoring
+  description: Demonstration project for host inspection.
+  version: 0.0.1
+paths:
+  /inspect/{filepath}:
+    get:
+      parameters:
+        - name: filepath
+          in: path
+          description: "The relative path within `/var/log` for the file to inspect.  Ex: `system.log` or `cups/access_log`."
+          required: true
+          schema:
+            type: string
+        - name: substring[]
+          in: query
+          description: The substring(s) to filter the log lines.  When multiple substrings are specified, then any match satisfies the filter (the substring match is OR).
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+        - name: limit
+          in: query
+          description: The maximum number of lines to view from the log.
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        '404':
+          description: Invalid, unknown, or non-file filepath value.
