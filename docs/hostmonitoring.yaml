@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Host Monitoring
   description: Demonstration project for host inspection.
-  version: 0.0.1
+  version: 0.1.0
 paths:
   /inspect/{filepath}:
     get:

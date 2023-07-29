@@ -69,3 +69,14 @@ There are a few key reasons for this choice:
 * Rust is a highly performant programming language.
 * Rust provides good memory safety invariants.
 * I work with Rust and axum day to day, so it is a comfortable choice.
+
+### Development
+
+    # Build the project
+    cargo build
+
+    # Run tests
+    cargo test
+
+    # Run style checks (aka: clippy)
+    cargo check

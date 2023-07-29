@@ -1,0 +1,11 @@
+# Cargo/Rust
+/target
+Cargo.lock
+**/*.rs.bk
+
+# Intellij
+.idea
+corixidae.iml
+
+# OSX
+.DS_STORE
