@@ -1,6 +1,7 @@
 use hostmonitoring_agent;
 use hyper::{body::Body, client::HttpConnector, Client, Request, StatusCode};
 use std::net::{SocketAddr, TcpListener};
+use std::path::PathBuf;
 use tokio::task::JoinHandle;
 
 const TEST_DATA: &str = "test-data";
@@ -24,10 +25,14 @@ async fn inspect_file() {
 fn run_test_agent_instance() -> (JoinHandle<()>, AgentClient) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
+    let cwd = std::env::current_dir().unwrap();
     let server = tokio::spawn(async move {
         axum::Server::from_tcp(listener)
             .unwrap()
-            .serve(hostmonitoring_agent::server::build_router(TEST_DATA.into()).into_make_service())
+            .serve(
+                hostmonitoring_agent::server::build_router(cwd.join(PathBuf::from(TEST_DATA)))
+                    .into_make_service(),
+            )
             .await
             .unwrap();
     });

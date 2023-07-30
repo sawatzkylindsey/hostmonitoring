@@ -18,6 +18,7 @@ Separate files may be viewed by distinct invocations of our solution.
 * The "inspector" views log lines via HTTP REST Api.
 We should only provide access to files within `/var/log`.
 It is OK to parameterize the log root (ex: may be useful for testing).
+* Logs are valid utf-8 encoded.
 * The "inspector" is implicitly trusted.
 We do not need to design and implement some form of authentication/authorization.
 * The host under monitoring is implicitly trusted.
@@ -75,6 +76,24 @@ There are a few key reasons for this choice:
 * Rust provides good memory safety invariants.
 * I work with Rust and axum day to day, so it is a comfortable choice.
 
+#### File Search
+In terms of how we actually search a file from `/var/log`, we need to particularly keep the performance and size requirements in mind.
+So to be clear, loading an entire multi-gigabyte file into memory, searching through it, and then re-ordering from bottom to top is not a satisfactory solution to the host monitoring problem.
+
+Instead, we should read the file from the bottom upwards, searching as we read.
+Once a match is made, the result should be streamed out over the REST Api to minimize memory consumption by the host monitoring agent.
+This approach is particularly nice in the case of a `limit` based query, since we can then stop reading as soon as our line limit has been reached.
+
+We'll use the following algorithm sketch for this search:
+1. Read a chunk from the bottom of the file.
+2. Find the right most line break (\n) in the chunk.
+If one does not exist, keep the chunk in memory and go back to #1.
+3. Process the right side of the chunk into a 'line', while maintaining the left side of the chunk for later.
+Apply the filter criteria to the line if applicable.
+4. Stream the line out over the Api.
+5. Repeat from #2.
+6. Terminate when either the full file has been processed, or the line limit has been reached.
+
 ### Development
 Use the following pattern to develop this project.
 For runtime user instructions, see [usage](USAGE.md).
@@ -91,10 +110,11 @@ Basic plan for tackling the implementation:
 
 1. ~~Wire up Cli to execute to agent server program.~~
 2. ~~Add axum with `/inspect` route.~~
-3. Implement `/var/log` file read (without optional query parameters).
-4. ~~Add integration test which actually issues a query to the running the agent.~~
-5. Implement substring[] query parameter and extend integration tests.
-6. Implement limit query parameter and extend integration tests (the order between this and the previous isn't important).
+3. ~~Implement the reverse read process for in-memory file-like struct.~~
+4. Implement `/var/log` file read (without optional query parameters).
+5. ~~Add integration test which actually issues a query to the running the agent.~~
+6. Implement substring[] query parameter and extend integration tests.
+7. Implement limit query parameter and extend integration tests (the order between this and the previous isn't important).
 
 Future enhancements (might not get to these):
 1. Add client side Cli program.

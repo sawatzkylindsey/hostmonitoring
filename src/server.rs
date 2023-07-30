@@ -5,6 +5,7 @@ use axum::http::Request;
 use axum::{http::StatusCode, Json, Router};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
+use tokio::fs::File;
 
 /// Run the agent service using the specified parameters.
 /// This starts an HTTP server and runs indefinitely (must use CTRL+C to exit).
@@ -36,14 +37,27 @@ pub async fn inspect_log(
     request: Request<Body>,
 ) -> Result<Json<Vec<String>>, StatusCode> {
     let filepath = request.uri().path().trim_start_matches('/');
+    let filepath = PathBuf::try_from(filepath).unwrap();
+    let absolute_filepath = log_root.join(filepath);
+    println!("reading: {}", absolute_filepath.to_string_lossy());
 
-    // TODO: Implement the actual log inspection functionality.
-
-    // Prints output like:
-    //   reading: /var/log/system.log
-    println!(
-        "reading: {log_root}/{filepath}",
-        log_root = log_root.to_string_lossy()
-    );
-    Ok(Json(vec!["pretend1".to_string(), "pretend2".to_string()]))
+    match absolute_filepath.canonicalize() {
+        Ok(filepath_canonical) => {
+            // Make sure the specified path doesn't walk "up" the directory tree.
+            // Axum already seems to strip any relative paths, but this protects in case that ever goes wrong.
+            if absolute_filepath == filepath_canonical {
+                match File::open(filepath_canonical).await {
+                    Ok(mut _file) => {
+                        Ok(Json(vec!["pretend1".to_string(), "pretend2".to_string()]))
+                        // TODO: Implement FileLike for tokio::fs::File.
+                        //Ok(Json(reverse_read(&mut file).await))
+                    }
+                    Err(_) => Err(StatusCode::NOT_FOUND),
+                }
+            } else {
+                Err(StatusCode::NOT_FOUND)
+            }
+        }
+        Err(_) => Err(StatusCode::BAD_REQUEST),
+    }
 }
