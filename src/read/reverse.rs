@@ -10,10 +10,9 @@ const BUFFER_LENGTH: usize = 1024;
 /// Lines are separated by the new line (\n) delimiter, and whitespace is trimmed off each line.
 /// The final result is a `Vec<String>` of lines, starting with the last line of the file, and ending with the first line of the file.
 ///
-/// # Panic
-/// This method panics if it encounters an invalid utf-8 sequence.
+/// Returns an error if an invalid utf-8 sequence is encountered (see `std::str::from_utf8`).
 // TODO: Change this method to stream the results rather than hold them all in memory.
-pub(crate) async fn reverse_read<F: FileLike>(file: &mut F) -> Vec<String> {
+pub(crate) async fn reverse_read<F: FileLike>(file: &mut F) -> Result<Vec<String>, ()> {
     let mut contents = Vec::default();
     let mut buffer = [0; BUFFER_LENGTH as usize];
     let mut suffix: Option<Vec<u8>> = None;
@@ -32,8 +31,8 @@ pub(crate) async fn reverse_read<F: FileLike>(file: &mut F) -> Vec<String> {
 
         loop {
             let (remaining, line) = match suffix.as_ref() {
-                Some(value) => decode(&buffer[0..chunk_end], value.as_slice()),
-                None => decode(&buffer[0..chunk_end], &[]),
+                Some(value) => decode(&buffer[0..chunk_end], value.as_slice())?,
+                None => decode(&buffer[0..chunk_end], &[])?,
             };
 
             match line {
@@ -86,7 +85,7 @@ pub(crate) async fn reverse_read<F: FileLike>(file: &mut F) -> Vec<String> {
         contents.push(line.to_string());
     }
 
-    contents
+    Ok(contents)
 }
 
 /// Utf-8 decode the "right side" of chunk of bytes with its suffix.
@@ -99,11 +98,10 @@ pub(crate) async fn reverse_read<F: FileLike>(file: &mut F) -> Vec<String> {
 ///
 /// If the bytes cannot be split into a left/right side based off a line break, then no String is returned (`None`).
 ///
-/// # Panic
-/// This method panics if it encounters an invalid utf-8 sequence.
+/// Returns an error if an invalid utf-8 sequence is encountered (see `std::str::from_utf8`).
 ///
 /// ### Examples
-/// ```no-run
+/// ```ignore
 /// let (remaining, line) = decode(b"hello\nworld", &[]);
 /// assert_eq!(remaining, 5);
 /// assert_eq!(line, Some("world".to_string()));
@@ -116,7 +114,7 @@ pub(crate) async fn reverse_read<F: FileLike>(file: &mut F) -> Vec<String> {
 /// assert_eq!(remaining, 10);
 /// assert_eq!(line, None);
 /// ```
-fn decode(bytes: &[u8], suffix: &[u8]) -> (usize, Option<String>) {
+fn decode(bytes: &[u8], suffix: &[u8]) -> Result<(usize, Option<String>), ()> {
     let bytes_length = bytes.len();
     let mut iter = bytes.rsplit(|c| c == &0xA);
     let right = iter.next().expect("split must have next()");
@@ -128,23 +126,23 @@ fn decode(bytes: &[u8], suffix: &[u8]) -> (usize, Option<String>) {
 
             // If there is not suffix, we can prevent an unnecessary Vec allocation.
             if suffix.is_empty() {
-                let line = std::str::from_utf8(&right[..]).expect("log bytes must decode utf8");
-                (
+                let line = std::str::from_utf8(&right[..]).map_err(|_| ())?;
+                Ok((
                     bytes_length.saturating_sub(part_length + 1),
                     Some(line.trim().to_string()),
-                )
+                ))
             } else {
                 // We need to create a new Vec to assemble part with the suffix.
                 let target: Vec<u8> = right.iter().chain(suffix.iter()).copied().collect();
-                let line = std::str::from_utf8(&target[..]).expect("log bytes must decode utf8");
-                (
+                let line = std::str::from_utf8(&target[..]).map_err(|_| ())?;
+                Ok((
                     bytes_length.saturating_sub(part_length + 1),
                     Some(line.trim().to_string()),
-                )
+                ))
             }
         }
         // If there isn't a left side, then we can't decode anything yet.
-        None => (bytes_length, None),
+        None => Ok((bytes_length, None)),
     }
 }
 
@@ -158,21 +156,20 @@ mod tests {
 
     #[test]
     fn decode_non_utf8() {
-        let (remaining, line) = decode(&[0xA, 0xED, 0x9F, 0xBF], &[]);
+        let (remaining, line) = decode(&[0xA, 0xED, 0x9F, 0xBF], &[]).unwrap();
         assert_eq!(remaining, 0);
         // It "decodes", but it looks like a junk character.
         println!("{}", line.unwrap());
     }
 
     #[test]
-    #[should_panic]
     fn decode_invalid_utf8() {
-        decode(&[0xA, 0x80], &[]);
+        decode(&[0xA, 0x80], &[]).unwrap_err();
     }
 
     #[test]
     fn decode_bytes_empty() {
-        let (remaining, line) = decode(&[], &[]);
+        let (remaining, line) = decode(&[], &[]).unwrap();
         assert_eq!(remaining, 0);
         assert_eq!(line, None);
     }
@@ -180,17 +177,17 @@ mod tests {
     #[test]
     fn decode_bytes() {
         let bytes = b"hello\nworld";
-        let (remaining, line) = decode(bytes, &[]);
+        let (remaining, line) = decode(bytes, &[]).unwrap();
         assert_eq!(remaining, 5);
         assert_eq!(line, Some("world".to_string()));
 
         let bytes = b"\nhelloworld";
-        let (remaining, line) = decode(bytes, &[]);
+        let (remaining, line) = decode(bytes, &[]).unwrap();
         assert_eq!(remaining, 0);
         assert_eq!(line, Some("helloworld".to_string()));
 
         let bytes = b"helloworld\n";
-        let (remaining, line) = decode(bytes, &[]);
+        let (remaining, line) = decode(bytes, &[]).unwrap();
         assert_eq!(remaining, 10);
         assert_eq!(line, Some("".to_string()));
     }
@@ -198,17 +195,17 @@ mod tests {
     #[test]
     fn decode_bytes_with_suffix() {
         let bytes = b"hello\nworld";
-        let (remaining, line) = decode(bytes, b"suffix");
+        let (remaining, line) = decode(bytes, b"suffix").unwrap();
         assert_eq!(remaining, 5);
         assert_eq!(line, Some("worldsuffix".to_string()));
 
         let bytes = b"\nhelloworld";
-        let (remaining, line) = decode(bytes, b"suffix");
+        let (remaining, line) = decode(bytes, b"suffix").unwrap();
         assert_eq!(remaining, 0);
         assert_eq!(line, Some("helloworldsuffix".to_string()));
 
         let bytes = b"helloworld\n";
-        let (remaining, line) = decode(bytes, b"suffix");
+        let (remaining, line) = decode(bytes, b"suffix").unwrap();
         assert_eq!(remaining, 10);
         assert_eq!(line, Some("suffix".to_string()));
     }
@@ -216,12 +213,12 @@ mod tests {
     #[test]
     fn decode_bytes_without_newline() {
         let bytes = b"helloworld";
-        let (remaining, line) = decode(bytes, &[]);
+        let (remaining, line) = decode(bytes, &[]).unwrap();
         assert_eq!(remaining, 10);
         assert_eq!(line, None);
 
         let bytes = b"helloworld";
-        let (remaining, line) = decode(bytes, b"suffix");
+        let (remaining, line) = decode(bytes, b"suffix").unwrap();
         assert_eq!(remaining, 10);
         assert_eq!(line, None);
     }
@@ -229,22 +226,22 @@ mod tests {
     #[test]
     fn decode_bytes_carriage_return() {
         let bytes = b"hello\r\r\nworld";
-        let (remaining, line) = decode(bytes, &[]);
+        let (remaining, line) = decode(bytes, &[]).unwrap();
         assert_eq!(remaining, 7);
         assert_eq!(line, Some("world".to_string()));
 
         let bytes = b"\r\r\nhelloworld";
-        let (remaining, line) = decode(bytes, &[]);
+        let (remaining, line) = decode(bytes, &[]).unwrap();
         assert_eq!(remaining, 2);
         assert_eq!(line, Some("helloworld".to_string()));
 
         let bytes = b"helloworld\r\r\n";
-        let (remaining, line) = decode(bytes, &[]);
+        let (remaining, line) = decode(bytes, &[]).unwrap();
         assert_eq!(remaining, 12);
         assert_eq!(line, Some("".to_string()));
 
         let bytes = b"hello\rworld";
-        let (remaining, line) = decode(bytes, &[]);
+        let (remaining, line) = decode(bytes, &[]).unwrap();
         assert_eq!(remaining, 11);
         assert_eq!(line, None);
     }
@@ -252,22 +249,22 @@ mod tests {
     #[test]
     fn decode_bytes_whitespace() {
         let bytes = b"hello\n world ";
-        let (remaining, line) = decode(bytes, &[]);
+        let (remaining, line) = decode(bytes, &[]).unwrap();
         assert_eq!(remaining, 5);
         assert_eq!(line, Some("world".to_string()));
 
         let bytes = b"helloworld\n ";
-        let (remaining, line) = decode(bytes, &[]);
+        let (remaining, line) = decode(bytes, &[]).unwrap();
         assert_eq!(remaining, 10);
         assert_eq!(line, Some("".to_string()));
 
         let bytes = b"hello\n world\r ";
-        let (remaining, line) = decode(bytes, &[]);
+        let (remaining, line) = decode(bytes, &[]).unwrap();
         assert_eq!(remaining, 5);
         assert_eq!(line, Some("world".to_string()));
 
         let bytes = b"helloworld\n\r ";
-        let (remaining, line) = decode(bytes, &[]);
+        let (remaining, line) = decode(bytes, &[]).unwrap();
         assert_eq!(remaining, 10);
         assert_eq!(line, Some("".to_string()));
     }
@@ -275,19 +272,19 @@ mod tests {
     #[test]
     fn decode_bytes_multiple_newline() {
         let bytes = b"hello\n\n\nworld";
-        let (remaining, line) = decode(bytes, &[]);
+        let (remaining, line) = decode(bytes, &[]).unwrap();
         assert_eq!(remaining, 7);
         assert_eq!(line, Some("world".to_string()));
 
-        let (remaining, line) = decode(&bytes[0..remaining], &[]);
+        let (remaining, line) = decode(&bytes[0..remaining], &[]).unwrap();
         assert_eq!(remaining, 6);
         assert_eq!(line, Some("".to_string()));
 
-        let (remaining, line) = decode(&bytes[0..remaining], &[]);
+        let (remaining, line) = decode(&bytes[0..remaining], &[]).unwrap();
         assert_eq!(remaining, 5);
         assert_eq!(line, Some("".to_string()));
 
-        let (remaining, line) = decode(&bytes[0..remaining], &[]);
+        let (remaining, line) = decode(&bytes[0..remaining], &[]).unwrap();
         assert_eq!(remaining, 5);
         assert_eq!(line, None);
     }
@@ -295,18 +292,18 @@ mod tests {
     #[test]
     fn decode_bytes_unicode() {
         let bytes = "你好👍\n你好👍".as_bytes();
-        let (remaining, line) = decode(bytes, &[]);
+        let (remaining, line) = decode(bytes, &[]).unwrap();
         assert_eq!(remaining, 10);
         assert_eq!(line, Some("你好👍".to_string()));
     }
 
     #[test]
     fn decode_bytes_spanning_unicode() {
-        let (remaining, line) = decode(&[0xA, 0xE4], &[0xBD, 0xA0]);
+        let (remaining, line) = decode(&[0xA, 0xE4], &[0xBD, 0xA0]).unwrap();
         assert_eq!(remaining, 0);
         assert_eq!(line, Some("你".to_string()));
 
-        let (remaining, line) = decode(&[0xA, 0xE4, 0xBD], &[0xA0]);
+        let (remaining, line) = decode(&[0xA, 0xE4, 0xBD], &[0xA0]).unwrap();
         assert_eq!(remaining, 0);
         assert_eq!(line, Some("你".to_string()));
     }
@@ -317,7 +314,7 @@ mod tests {
         let mut file = InMemoryFile::new(Vec::default());
 
         // Execute
-        let result = reverse_read(&mut file).await;
+        let result = reverse_read(&mut file).await.unwrap();
 
         // Verify
         let empty: Vec<String> = Vec::default();
@@ -336,7 +333,7 @@ mod tests {
         let mut file = InMemoryFile::new(input.as_bytes().to_vec());
 
         // Execute
-        let result = reverse_read(&mut file).await;
+        let result = reverse_read(&mut file).await.unwrap();
 
         // Verify
         assert_eq!(result, vec!["helloworld".to_string()]);
@@ -348,7 +345,7 @@ mod tests {
         let mut file = InMemoryFile::new(b"\nhelloworld\nabc\n".to_vec());
 
         // Execute
-        let result = reverse_read(&mut file).await;
+        let result = reverse_read(&mut file).await.unwrap();
 
         // Verify
         assert_eq!(
@@ -368,7 +365,7 @@ mod tests {
         let mut file = InMemoryFile::new(content.as_bytes().to_vec());
 
         // Execute
-        let result = reverse_read(&mut file).await;
+        let result = reverse_read(&mut file).await.unwrap();
 
         // Verify
         assert_eq!(result, vec![content]);
@@ -385,7 +382,7 @@ mod tests {
         let mut file = InMemoryFile::new(content.as_bytes().to_vec());
 
         // Execute
-        let result = reverse_read(&mut file).await;
+        let result = reverse_read(&mut file).await.unwrap();
 
         // Verify
         assert_eq!(result, vec![content]);
@@ -402,7 +399,7 @@ mod tests {
         let mut file = InMemoryFile::new(content.as_bytes().to_vec());
 
         // Execute
-        let result = reverse_read(&mut file).await;
+        let result = reverse_read(&mut file).await.unwrap();
 
         // Verify
         assert_eq!(result, vec![content]);

@@ -13,10 +13,11 @@ blarg = "0.2.1"
 # Common library for constructing error types
 thiserror = "^1.0"
 # Async runtime library
-tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread"] }
 
 [dev-dependencies]
 hyper = { version = "0.14.26", features = ["http1", "client", "tcp", "runtime"] }
 rand = "^0.8"
 rstest = "^0.15"
+rstest_reuse = "^0.6.0"
 serde_json = "1.0"

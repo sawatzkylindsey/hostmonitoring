@@ -1,4 +1,5 @@
 use crate::parameter::Parameters;
+use crate::read::reverse::reverse_read;
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::Request;
@@ -47,17 +48,18 @@ pub async fn inspect_log(
             // Axum already seems to strip any relative paths, but this protects in case that ever goes wrong.
             if absolute_filepath == filepath_canonical {
                 match File::open(filepath_canonical).await {
-                    Ok(mut _file) => {
-                        Ok(Json(vec!["pretend1".to_string(), "pretend2".to_string()]))
-                        // TODO: Implement FileLike for tokio::fs::File.
-                        //Ok(Json(reverse_read(&mut file).await))
+                    Ok(mut file) => {
+                        let content = reverse_read(&mut file)
+                            .await
+                            .map_err(|_| StatusCode::FORBIDDEN)?;
+                        Ok(Json(content))
                     }
                     Err(_) => Err(StatusCode::NOT_FOUND),
                 }
             } else {
-                Err(StatusCode::NOT_FOUND)
+                Err(StatusCode::BAD_REQUEST)
             }
         }
-        Err(_) => Err(StatusCode::BAD_REQUEST),
+        Err(_) => Err(StatusCode::NOT_FOUND),
     }
 }

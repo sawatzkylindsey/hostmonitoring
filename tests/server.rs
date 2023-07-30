@@ -6,8 +6,6 @@ use tokio::task::JoinHandle;
 
 const TEST_DATA: &str = "test-data";
 
-// This test is expected to fail currently.
-// TODO: Fix by implementing the server functionality.
 #[tokio::test]
 async fn inspect_file() {
     // Setup
@@ -17,7 +15,109 @@ async fn inspect_file() {
     let result = client.inspect("service.log").await.unwrap();
 
     // Verify
-    assert_eq!(result, vec!["2 def".to_string(), "1 abc".to_string()]);
+    assert_eq!(
+        result,
+        vec!["".to_string(), "2 def".to_string(), "1 abc".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn inspect_not_found() {
+    // Setup
+    let (_server, client) = run_test_agent_instance();
+
+    // Execute
+    let result = client.inspect("not-found.log").await.unwrap_err();
+
+    // Verify
+    assert_eq!(result, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn inspect_relative_path() {
+    // Setup
+    let (_server, client) = run_test_agent_instance();
+
+    // Execute
+    // This is a valid path, but out of the intendend root log directory.
+    let result = client.inspect("../Cargo.toml").await.unwrap_err();
+
+    // Verify
+    assert_eq!(result, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn inspect_non_utf8() {
+    // Setup
+    let (_server, client) = run_test_agent_instance();
+
+    // Execute
+    // File generated with:
+    //  echo -ne "\x0a\xed\x9f\xbf" > test-data/non-utf8.log
+    let result = client.inspect("non-utf8.log").await.unwrap();
+
+    // Verify
+    assert_eq!(result, vec!["\u{d7ff}".to_string()]);
+}
+
+#[tokio::test]
+async fn inspect_invalid_utf8() {
+    // Setup
+    let (_server, client) = run_test_agent_instance();
+
+    // Execute
+    // File generated with:
+    //  echo -ne "\x0a\x80" > test-data/invalid-utf8.log
+    let result = client.inspect("invalid-utf8.log").await.unwrap_err();
+
+    // Verify
+    assert_eq!(result, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn inspect_long() {
+    // Setup
+    let (_server, client) = run_test_agent_instance();
+
+    // Execute
+    // File generated in build.rs.
+    let result = client.inspect("long.log").await.unwrap();
+
+    // Verify
+    assert_eq!(
+        result,
+        (0..100_000)
+            .rev()
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn inspect_wide() {
+    // Setup
+    let (_server, client) = run_test_agent_instance();
+
+    // Execute
+    // File generated in build.rs.
+    let result = client.inspect("wide.log").await.unwrap();
+
+    // Verify
+    assert_eq!(result, vec!["a".repeat(100_000)]);
+}
+
+#[tokio::test]
+#[ignore] // Takes about 2 minutes & 3.7GB on the hostmonitoring-agent on my computer.
+async fn inspect_large() {
+    // Setup
+    let (_server, client) = run_test_agent_instance();
+
+    // Execute
+    // File generated in build.rs.
+    let result = client.inspect("large.log").await.unwrap();
+
+    // Verify
+    assert_eq!(result.len(), 100_000);
 }
 
 /// Starts the axum implementation of our host monitoring agent, rooted at `TEST_DATA`.

@@ -9,3 +9,9 @@ corixidae.iml
 
 # OSX
 .DS_STORE
+
+# Project
+.generated
+test-data/large.log
+test-data/long.log
+test-data/wide.log
