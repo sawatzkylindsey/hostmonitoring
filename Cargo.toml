@@ -8,8 +8,13 @@ edition = "2021"
 [dependencies]
 # Web server framework
 axum = { version = "0.6.2", features = ["headers"] }
+axum-streams = { version = "0.9.1", features=["json"] }
 # Cli library
 blarg = "0.2.1"
+# Async primitives
+futures = "0.3.28"
+# Serialization framework
+serde = "^1.0.0"
 # Common library for constructing error types
 thiserror = "^1.0"
 # Async runtime library

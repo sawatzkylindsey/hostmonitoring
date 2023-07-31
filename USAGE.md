@@ -14,19 +14,28 @@
 > ㅤ--log-root LOG-ROOT  Path to the logs to expose (default: /var/log).
 
     # Run the agent server
-    ./target/debug/hostmonitoring-agent 123
+    ./target/debug/hostmonitoring-agent 123 --log-root /Users/me/hostmonitoring/test-data
     
     .. runs indefinitely, exit with CTRL+C ..
 
 ### Querying the agent
 
-    curl http://localhost:8081/inspect/dir/path
+    curl http://localhost:8081/inspect/service.log
 
-> ["pretend1","pretend2"]
+> ["", "2 def", "1 abc"]
 
-    curl http://localhost:8081/noop
+    curl http://localhost:8081/inspect/long.log
 
-> ["pretend1","pretend2"]
+> ["99999", "99998", ..
+
+    curl http://localhost:8081/inspect/large.log -O
+    cat large.log | jq ". | length"
+
+> 100000
+
+    curl -f http://localhost:8081/inspect/noop
+
+> curl: (22) The requested URL returned error: 404
 
     curl -f http://localhost:8081/noop
 

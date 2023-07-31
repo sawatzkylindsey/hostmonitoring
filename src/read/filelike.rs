@@ -95,7 +95,6 @@ mod tests {
     use rstest::rstest;
     use rstest_reuse::{apply, template};
     use std::path::PathBuf;
-    use std::time::Duration;
     use tokio::io::AsyncWriteExt;
 
     enum FileLikeType {
@@ -249,7 +248,7 @@ mod tests {
     #[tokio::test]
     async fn length(#[case] flt: FileLikeType, #[case] value: &str, #[case] expected: usize) {
         // Setup
-        let mut file = setup(flt, value.as_bytes().to_vec()).await;
+        let file = setup(flt, value.as_bytes().to_vec()).await;
 
         // Execute
         let result = file.length().await.unwrap();

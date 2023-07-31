@@ -1,4 +1,4 @@
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let parameters = hostmonitoring_agent::parameter::parse();
 
