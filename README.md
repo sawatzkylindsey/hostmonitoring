@@ -114,7 +114,7 @@ Basic plan for tackling the implementation:
 4. ~~Implement `/var/log` file read (without optional query parameters).~~
 5. ~~Add integration test which actually issues a query to the running the agent.~~
 6. ~~Implement substring[] query parameter and extend integration tests.~~
-7. Implement limit query parameter and extend integration tests (the order between this and the previous isn't important).
+7. ~~Implement limit query parameter and extend integration tests (the order between this and the previous isn't important).~~
 
 Future enhancements (might not get to these):
 1. Add client side Cli program.

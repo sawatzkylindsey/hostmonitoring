@@ -22,11 +22,15 @@
 
     curl http://localhost:8081/inspect/service.log
 
-> ["", "2 def", "1 abc"]
+> ["", "3 abcdef", "2 def", "1 abc"]
 
     curl http://localhost:8081/inspect/long.log
 
 > ["99999", "99998", ..
+
+    curl http://localhost:8081/inspect/long.log?substring[]=123
+
+> ["99123", "98123", ..
 
     # This file is ~1921 MB.
     # Takes about 1.5 minutes & less than 8 MB on the hostmonitoring-agent on my computer.
@@ -34,6 +38,11 @@
     cat large.log | jq ". | length"
 
 > 100000
+
+    curl http://localhost:8081/inspect/large.log?limit=100 -O
+    cat large.log | jq ". | length"
+
+> 100
 
     curl -f http://localhost:8081/inspect/noop
 
@@ -46,3 +55,15 @@
     curl -f http://localhost:8081/
 
 > curl: (22) The requested URL returned error: 404
+
+    curl -f http://localhost:8081/inspect/../Cargo.toml
+
+> curl: (22) The requested URL returned error: 404
+
+### Frequently Asked Questions (FAQ)
+* The agent keeps returning `400`, but I'm querying for actual files (they exist).
+
+> The hostmonitoring-agent must be configured to run against a canonical/absolute file path.
+> Double check how your file system structures the log root.
+> For example, sometimes `/var/log` is actually symbolically linked from `/private`.
+> In this case, the canonical log root is `/private/var/log` (the agent won't discover this for you).

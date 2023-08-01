@@ -100,6 +100,7 @@ pub(crate) async fn inspect_log(
         }
     };
 
+    // TODO: Should use a logging system.
     println!(
         "reading: {}{}",
         absolute_filepath.to_string_lossy(),
@@ -150,6 +151,8 @@ pub(crate) async fn inspect_log(
                     }
                 }
             } else {
+                // As noted earlier, this path is impossible when running the actual agent.
+                // However, we do exercise this in the integration tests.
                 StatusCode::BAD_REQUEST.into_response()
             }
         }
