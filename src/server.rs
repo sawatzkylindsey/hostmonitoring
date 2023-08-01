@@ -90,7 +90,6 @@ pub(crate) async fn inspect_log(
     let filepath = request.uri().path().trim_start_matches('/');
     let filepath = PathBuf::try_from(filepath).unwrap();
     let absolute_filepath = state.log_root.join(filepath);
-    println!("reading: {}", absolute_filepath.to_string_lossy());
 
     // In axum when you take the `Request<Body>` then you can't leverage the built in mechanisms to parse the query parameters.
     // That's why we're doing in manually in `impl TryFrom<&Uri> for InspectQuery` (see `query.rs`).
@@ -100,6 +99,12 @@ pub(crate) async fn inspect_log(
             return error.into_response();
         }
     };
+
+    println!(
+        "reading: {}{}",
+        absolute_filepath.to_string_lossy(),
+        query.to_uri()
+    );
 
     match absolute_filepath.canonicalize() {
         Ok(filepath_canonical) => {
@@ -119,11 +124,15 @@ pub(crate) async fn inspect_log(
                             .task_sender
                             .send(task)
                             .expect("driver channel must still be open");
-                        let receiver_stream = ChannelReceiverStream::new(receiver);
-                        StreamBodyAs::json_array(
-                            receiver_stream.filter(move |lr| ready(query.line_matches(lr))),
-                        )
-                        .into_response()
+                        let limit = query.limit();
+                        let receiver_stream = ChannelReceiverStream::new(receiver)
+                            .filter(move |lr| ready(query.line_matches(lr)));
+
+                        if let Some(l) = limit {
+                            StreamBodyAs::json_array(receiver_stream.take(l)).into_response()
+                        } else {
+                            StreamBodyAs::json_array(receiver_stream).into_response()
+                        }
                     }
                     Err(error) => {
                         if let Some(os_error) = error.raw_os_error() {

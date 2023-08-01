@@ -1,5 +1,5 @@
 pub mod parameter;
-pub(crate) mod query;
+pub mod query;
 pub(crate) mod read;
 pub mod server;
 

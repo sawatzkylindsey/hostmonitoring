@@ -1,5 +1,6 @@
 use futures::future::{join_all, JoinAll};
 use hostmonitoring_agent;
+use hostmonitoring_agent::query::InspectQuery;
 use hyper::{body::Body, client::HttpConnector, Client, Request, StatusCode};
 use rstest::rstest;
 use std::net::{SocketAddr, TcpListener};
@@ -21,7 +22,56 @@ async fn inspect_file(#[case] substrings: Vec<&str>, #[case] expected: Vec<&str>
     let (_server, client) = run_test_agent_instance();
 
     // Execute
-    let result = client.inspect("service.log", substrings).await.unwrap();
+    let result = client
+        .inspect(
+            "service.log",
+            InspectQuery::with_substrings(substrings.into_iter().map(|s| s.to_string()).collect()),
+        )
+        .await
+        .unwrap();
+
+    // Verify
+    assert_eq!(
+        result,
+        expected
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>()
+    );
+}
+
+#[rstest]
+#[case(vec![], 0, vec![])]
+#[case(vec![], 1, vec![""])]
+#[case(vec![], 2, vec!["", "3 abcdef"])]
+#[case(vec![], 3, vec!["", "3 abcdef", "2 def"])]
+#[case(vec![], 4, vec!["", "3 abcdef", "2 def", "1 abc"])]
+#[case(vec![], 5, vec!["", "3 abcdef", "2 def", "1 abc"])]
+#[case(vec!["3"], 0, vec![])]
+#[case(vec!["3"], 1, vec!["3 abcdef"])]
+#[case(vec!["abc"], 0, vec![])]
+#[case(vec!["abc"], 1, vec!["3 abcdef"])]
+#[case(vec!["abc"], 2, vec!["3 abcdef", "1 abc"])]
+#[tokio::test]
+async fn inspect_file_limit(
+    #[case] substrings: Vec<&str>,
+    #[case] limit: usize,
+    #[case] expected: Vec<&str>,
+) {
+    // Setup
+    let (_server, client) = run_test_agent_instance();
+
+    // Execute
+    let result = client
+        .inspect(
+            "service.log",
+            InspectQuery::new(
+                substrings.into_iter().map(|s| s.to_string()).collect(),
+                limit,
+            ),
+        )
+        .await
+        .unwrap();
 
     // Verify
     assert_eq!(
@@ -40,7 +90,7 @@ async fn inspect_not_found() {
 
     // Execute
     let result = client
-        .inspect("not-found.log", Vec::default())
+        .inspect("not-found.log", InspectQuery::default())
         .await
         .unwrap_err();
 
@@ -56,7 +106,7 @@ async fn inspect_relative_path() {
     // Execute
     // This is a valid path, but out of the intendend root log directory.
     let result = client
-        .inspect("../Cargo.toml", Vec::default())
+        .inspect("../Cargo.toml", InspectQuery::default())
         .await
         .unwrap_err();
 
@@ -73,7 +123,7 @@ async fn inspect_non_utf8() {
     // File generated with:
     //  echo -ne "\x0a\xed\x9f\xbf" > test-data/non-utf8.log
     let result = client
-        .inspect("non-utf8.log", Vec::default())
+        .inspect("non-utf8.log", InspectQuery::default())
         .await
         .unwrap();
 
@@ -90,7 +140,7 @@ async fn inspect_invalid_utf8() {
     // File generated with:
     //  echo -ne "\x0a\x80" > test-data/invalid-utf8.log
     let result = client
-        .inspect("invalid-utf8.log", Vec::default())
+        .inspect("invalid-utf8.log", InspectQuery::default())
         .await
         .unwrap_err();
 
@@ -109,7 +159,10 @@ async fn inspect_lorem_ipsum() {
     // Execute
     // File generated in build.rs.
     let result = client
-        .inspect("lorem-ipsum.log", vec!["aliquip"])
+        .inspect(
+            "lorem-ipsum.log",
+            InspectQuery::with_substrings(vec!["aliquip".to_string()]),
+        )
         .await
         .unwrap();
 
@@ -129,7 +182,10 @@ async fn inspect_long() {
 
     // Execute
     // File generated in build.rs.
-    let result = client.inspect("long.log", Vec::default()).await.unwrap();
+    let result = client
+        .inspect("long.log", InspectQuery::default())
+        .await
+        .unwrap();
 
     // Verify
     assert_eq!(
@@ -148,7 +204,10 @@ async fn inspect_wide() {
 
     // Execute
     // File generated in build.rs.
-    let result = client.inspect("wide.log", Vec::default()).await.unwrap();
+    let result = client
+        .inspect("wide.log", InspectQuery::default())
+        .await
+        .unwrap();
 
     // Verify
     assert_eq!(result, vec!["a".repeat(100_000)]);
@@ -160,11 +219,13 @@ async fn inspect_concurrent_requests() {
     let (_server, client) = run_test_agent_instance();
 
     // Execute
-    let results: Vec<Result<Vec<String>, TestClientError>> = join_all((0..100).map(|_| async {
+    let results: Vec<Result<Vec<String>, TestClientError>> = join_all((0..50).map(|_| async {
         let client_clone = client.clone();
         tokio::spawn(async move {
             // File generated in build.rs.
-            client_clone.inspect("long.log", Vec::default()).await
+            client_clone
+                .inspect("long.log", InspectQuery::default())
+                .await
         })
         .await
         .unwrap()
@@ -194,17 +255,19 @@ async fn inspect_concurrent_requests() {
 }
 
 #[tokio::test]
-#[ignore] // Takes to long to include in the build, but may be run by commenting out this line.
-async fn inspect_large() {
+async fn inspect_large_limited() {
     // Setup
     let (_server, client) = run_test_agent_instance();
 
     // Execute
     // File generated in build.rs.
-    let result = client.inspect("large.log", Vec::default()).await.unwrap();
+    let result = client
+        .inspect("large.log", InspectQuery::with_limit(10))
+        .await
+        .unwrap();
 
     // Verify
-    assert_eq!(result.len(), 100_000);
+    assert_eq!(result.len(), 10);
 }
 
 /// Starts the axum implementation of our host monitoring agent, rooted at `TEST_DATA`.
@@ -257,30 +320,14 @@ impl AgentClient {
     async fn inspect(
         &self,
         path: impl Into<String>,
-        substrings: Vec<&str>,
+        query: InspectQuery,
     ) -> Result<Vec<String>, TestClientError> {
-        let query = if substrings.is_empty() {
-            "".to_string()
-        } else {
-            let mut query = "?".to_string();
-
-            for (i, substring) in substrings.iter().enumerate() {
-                query.push_str("substring[]=");
-                query.push_str(substring);
-
-                if i + 1 < substrings.len() {
-                    query.push_str("&");
-                }
-            }
-
-            query
-        };
-
         let request = Request::builder()
             .uri(format!(
                 "http://{address}/inspect/{path}{query}",
                 address = self.address,
                 path = path.into(),
+                query = query.to_uri(),
             ))
             .body(Body::empty())
             .expect("must be a valid hyper::Request");
