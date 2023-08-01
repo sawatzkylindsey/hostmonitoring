@@ -28,6 +28,8 @@
 
 > ["99999", "99998", ..
 
+    # This file is ~1921 MB.
+    # Takes about 1.5 minutes & less than 8 MB on the hostmonitoring-agent on my computer.
     curl http://localhost:8081/inspect/large.log -O
     cat large.log | jq ". | length"
 

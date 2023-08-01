@@ -132,8 +132,8 @@ impl Stream for ChannelReceiverStream {
 
 /// A small wrapper around a `Result<String, ()>`.
 /// Used so we can implement a serializer that errors when an invalid utf-8 sequence is encountered.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LineResult(Result<String, ()>);
+#[derive(Debug, PartialEq, Eq)]
+pub struct LineResult(pub(crate) Result<String, ()>);
 
 impl LineResult {
     pub fn ok(value: String) -> Self {

@@ -1,4 +1,5 @@
 use crate::parameter::Parameters;
+use crate::query::InspectQuery;
 use crate::read::reverse::{reverse_read_runner, ChannelReceiverStream};
 use axum::body::Body;
 use axum::extract::State;
@@ -6,7 +7,8 @@ use axum::http::Request;
 use axum::response::IntoResponse;
 use axum::{http::StatusCode, Router};
 use axum_streams::StreamBodyAs;
-use futures::future::join_all;
+use futures::future::{join_all, ready};
+use futures::StreamExt;
 use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
@@ -90,6 +92,15 @@ pub(crate) async fn inspect_log(
     let absolute_filepath = state.log_root.join(filepath);
     println!("reading: {}", absolute_filepath.to_string_lossy());
 
+    // In axum when you take the `Request<Body>` then you can't leverage the built in mechanisms to parse the query parameters.
+    // That's why we're doing in manually in `impl TryFrom<&Uri> for InspectQuery` (see `query.rs`).
+    let query = match InspectQuery::try_from(request.uri()) {
+        Ok(query) => query,
+        Err(error) => {
+            return error.into_response();
+        }
+    };
+
     match absolute_filepath.canonicalize() {
         Ok(filepath_canonical) => {
             // Make sure the specified path doesn't walk "up" the directory tree.
@@ -109,7 +120,10 @@ pub(crate) async fn inspect_log(
                             .send(task)
                             .expect("driver channel must still be open");
                         let receiver_stream = ChannelReceiverStream::new(receiver);
-                        StreamBodyAs::json_array(receiver_stream).into_response()
+                        StreamBodyAs::json_array(
+                            receiver_stream.filter(move |lr| ready(query.line_matches(lr))),
+                        )
+                        .into_response()
                     }
                     Err(error) => {
                         if let Some(os_error) = error.raw_os_error() {

@@ -1,6 +1,7 @@
 use futures::future::{join_all, JoinAll};
 use hostmonitoring_agent;
 use hyper::{body::Body, client::HttpConnector, Client, Request, StatusCode};
+use rstest::rstest;
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
 use tokio::sync::mpsc::unbounded_channel;
@@ -8,18 +9,27 @@ use tokio::task::JoinHandle;
 
 const TEST_DATA: &str = "test-data";
 
+#[rstest]
+#[case(vec![], vec!["", "3 abcdef", "2 def", "1 abc"])]
+#[case(vec![""], vec!["", "3 abcdef", "2 def", "1 abc"])]
+#[case(vec!["3"], vec!["3 abcdef"])]
+#[case(vec!["abc"], vec!["3 abcdef", "1 abc"])]
+#[case(vec!["1", "2"], vec!["2 def", "1 abc"])]
 #[tokio::test]
-async fn inspect_file() {
+async fn inspect_file(#[case] substrings: Vec<&str>, #[case] expected: Vec<&str>) {
     // Setup
     let (_server, client) = run_test_agent_instance();
 
     // Execute
-    let result = client.inspect("service.log").await.unwrap();
+    let result = client.inspect("service.log", substrings).await.unwrap();
 
     // Verify
     assert_eq!(
         result,
-        vec!["".to_string(), "2 def".to_string(), "1 abc".to_string()]
+        expected
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>()
     );
 }
 
@@ -29,7 +39,10 @@ async fn inspect_not_found() {
     let (_server, client) = run_test_agent_instance();
 
     // Execute
-    let result = client.inspect("not-found.log").await.unwrap_err();
+    let result = client
+        .inspect("not-found.log", Vec::default())
+        .await
+        .unwrap_err();
 
     // Verify
     assert_eq!(result.expect_server(), StatusCode::NOT_FOUND);
@@ -42,7 +55,10 @@ async fn inspect_relative_path() {
 
     // Execute
     // This is a valid path, but out of the intendend root log directory.
-    let result = client.inspect("../Cargo.toml").await.unwrap_err();
+    let result = client
+        .inspect("../Cargo.toml", Vec::default())
+        .await
+        .unwrap_err();
 
     // Verify
     assert_eq!(result.expect_server(), StatusCode::BAD_REQUEST);
@@ -56,7 +72,10 @@ async fn inspect_non_utf8() {
     // Execute
     // File generated with:
     //  echo -ne "\x0a\xed\x9f\xbf" > test-data/non-utf8.log
-    let result = client.inspect("non-utf8.log").await.unwrap();
+    let result = client
+        .inspect("non-utf8.log", Vec::default())
+        .await
+        .unwrap();
 
     // Verify
     assert_eq!(result, vec!["\u{d7ff}".to_string()]);
@@ -70,7 +89,10 @@ async fn inspect_invalid_utf8() {
     // Execute
     // File generated with:
     //  echo -ne "\x0a\x80" > test-data/invalid-utf8.log
-    let result = client.inspect("invalid-utf8.log").await.unwrap_err();
+    let result = client
+        .inspect("invalid-utf8.log", Vec::default())
+        .await
+        .unwrap_err();
 
     // Verify
     // With the streaming change we're relying on a 3rd party crate (a package) to produce a stream of json.
@@ -80,13 +102,34 @@ async fn inspect_invalid_utf8() {
 }
 
 #[tokio::test]
+async fn inspect_lorem_ipsum() {
+    // Setup
+    let (_server, client) = run_test_agent_instance();
+
+    // Execute
+    // File generated in build.rs.
+    let result = client
+        .inspect("lorem-ipsum.log", vec!["aliquip"])
+        .await
+        .unwrap();
+
+    // Verify
+    assert_eq!(
+        result,
+        (0..4)
+            .map(|_| "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.".to_string())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
 async fn inspect_long() {
     // Setup
     let (_server, client) = run_test_agent_instance();
 
     // Execute
     // File generated in build.rs.
-    let result = client.inspect("long.log").await.unwrap();
+    let result = client.inspect("long.log", Vec::default()).await.unwrap();
 
     // Verify
     assert_eq!(
@@ -105,7 +148,7 @@ async fn inspect_wide() {
 
     // Execute
     // File generated in build.rs.
-    let result = client.inspect("wide.log").await.unwrap();
+    let result = client.inspect("wide.log", Vec::default()).await.unwrap();
 
     // Verify
     assert_eq!(result, vec!["a".repeat(100_000)]);
@@ -121,7 +164,7 @@ async fn inspect_concurrent_requests() {
         let client_clone = client.clone();
         tokio::spawn(async move {
             // File generated in build.rs.
-            client_clone.inspect("long.log").await
+            client_clone.inspect("long.log", Vec::default()).await
         })
         .await
         .unwrap()
@@ -151,14 +194,14 @@ async fn inspect_concurrent_requests() {
 }
 
 #[tokio::test]
-#[ignore] // Takes about 1.5 minutes & less than 8 MB on the hostmonitoring-agent on my computer.
+#[ignore] // Takes to long to include in the build, but may be run by commenting out this line.
 async fn inspect_large() {
     // Setup
     let (_server, client) = run_test_agent_instance();
 
     // Execute
     // File generated in build.rs.
-    let result = client.inspect("large.log").await.unwrap();
+    let result = client.inspect("large.log", Vec::default()).await.unwrap();
 
     // Verify
     assert_eq!(result.len(), 100_000);
@@ -211,10 +254,31 @@ impl AgentClient {
         Self { client, address }
     }
 
-    async fn inspect(&self, path: impl Into<String>) -> Result<Vec<String>, TestClientError> {
+    async fn inspect(
+        &self,
+        path: impl Into<String>,
+        substrings: Vec<&str>,
+    ) -> Result<Vec<String>, TestClientError> {
+        let query = if substrings.is_empty() {
+            "".to_string()
+        } else {
+            let mut query = "?".to_string();
+
+            for (i, substring) in substrings.iter().enumerate() {
+                query.push_str("substring[]=");
+                query.push_str(substring);
+
+                if i + 1 < substrings.len() {
+                    query.push_str("&");
+                }
+            }
+
+            query
+        };
+
         let request = Request::builder()
             .uri(format!(
-                "http://{address}/inspect/{path}",
+                "http://{address}/inspect/{path}{query}",
                 address = self.address,
                 path = path.into(),
             ))
